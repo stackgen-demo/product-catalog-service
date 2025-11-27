@@ -15,7 +15,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: opentelemetry-demo/product-catalog-service
   AWS_ACCOUNT_ID: 339712749745
-  IMAGE_TAG: latest
+  IMAGE_TAG: 2.1.3-product-catalog
 
 jobs:
   build-and-push:
@@ -50,10 +50,8 @@ jobs:
         with:
           images: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
           tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-
+            type=raw,value=${{ env.IMAGE_TAG }}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=raw,value={{date 'YYYYMMDD-HHmmss'}}-{{sha}},enable=${{ github.event_name == 'push' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -74,6 +72,6 @@ jobs:
           echo "Tags: ${{ steps.meta.outputs.tags }}"
           echo ""
           echo "Image URIs:"
+          echo "  Version: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
           echo "  Latest: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
-          echo "  SHA: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:sha-${{ github.sha }}"
 
