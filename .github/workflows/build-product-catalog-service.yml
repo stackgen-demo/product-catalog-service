@@ -89,8 +89,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: appcd-dev/otel-microservices-demo
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.HELM_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           path: helm-repo
+          ref: main
           
       - name: Update image tag in values.yaml
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
