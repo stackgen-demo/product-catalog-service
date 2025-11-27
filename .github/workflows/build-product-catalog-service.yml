@@ -93,15 +93,24 @@ jobs:
           path: helm-repo
           ref: main
           
-      - name: Update image tag in values.yaml
+      - name: Update image tag in values.yaml and create PR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: helm-repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.OTEL_DEMO_PAT }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           VALUES_FILE="demo-apps/product-catalog-service/values.yaml"
           ECR_REPO="339712749745.dkr.ecr.us-east-1.amazonaws.com/opentelemetry-demo/product-catalog-service"
+          BRANCH_NAME="update/product-catalog-service-${{ env.IMAGE_TAG }}"
+          PR_TITLE="chore: update product-catalog-service image tag to ${{ env.IMAGE_TAG }}"
+          
+          # Checkout main and create new branch
+          git checkout main
+          git pull origin main
+          git checkout -b "$BRANCH_NAME"
           
           # Update the repository in values.yaml
           sed -i.bak "s|repository:.*|repository: ${ECR_REPO}|g" "$VALUES_FILE"
@@ -114,15 +123,30 @@ jobs:
           
           # Show the change
           echo "Updated values.yaml:"
-          git diff demo-apps/product-catalog-service/values.yaml || true
+          git diff "$VALUES_FILE" || true
           
           # Commit and push if there are changes
-          if git diff --quiet demo-apps/product-catalog-service/values.yaml; then
+          if git diff --quiet "$VALUES_FILE"; then
             echo "No changes to commit"
           else
-            git add demo-apps/product-catalog-service/values.yaml
-            git commit -m "chore: update product-catalog-service image tag to ${{ env.IMAGE_TAG }}"
-            git push
-            echo "✅ Updated Helm values.yaml with new tag: ${{ env.IMAGE_TAG }}"
+            git add "$VALUES_FILE"
+            git commit -m "$PR_TITLE"
+            git push origin "$BRANCH_NAME"
+            
+            # Create PR using GitHub CLI
+            gh pr create \
+              --title "$PR_TITLE" \
+              --body "Automated update: Update product-catalog-service image tag to ${{ env.IMAGE_TAG }}
+              
+              - Repository: ${ECR_REPO}
+              - Tag: ${{ env.IMAGE_TAG }}
+              - Pull Policy: Always
+              
+              This PR was automatically created by the product-catalog-service build workflow." \
+              --base main \
+              --head "$BRANCH_NAME" \
+              --repo appcd-dev/otel-microservices-demo || echo "PR may already exist or GitHub CLI not available"
+            
+            echo "✅ Created PR for image tag update: ${{ env.IMAGE_TAG }}"
           fi
 
