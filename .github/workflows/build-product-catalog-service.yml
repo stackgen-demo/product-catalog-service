@@ -76,7 +76,7 @@ jobs:
 
       - name: Output image details
         run: |
-          echo "✅ Successfully built and pushed image"
+          echo "Successfully built and pushed image"
           echo "Repository: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}"
           echo "Tags: ${{ steps.meta.outputs.tags }}"
           echo ""
@@ -147,6 +147,6 @@ jobs:
               --head "$BRANCH_NAME" \
               --repo appcd-dev/otel-microservices-demo || echo "PR may already exist or GitHub CLI not available"
             
-            echo "✅ Created PR for image tag update: ${{ env.IMAGE_TAG }}"
+            echo "Created PR for image tag update: ${{ env.IMAGE_TAG }}"
           fi
 
