@@ -99,11 +99,17 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
+          VALUES_FILE="demo-apps/product-catalog-service/values.yaml"
+          ECR_REPO="339712749745.dkr.ecr.us-east-1.amazonaws.com/opentelemetry-demo/product-catalog-service"
+          
+          # Update the repository in values.yaml
+          sed -i.bak "s|repository:.*|repository: ${ECR_REPO}|g" "$VALUES_FILE"
+          
           # Update the tag in values.yaml
-          sed -i.bak "s|tag: \".*\"|tag: \"${{ env.IMAGE_TAG }}\"|g" demo-apps/product-catalog-service/values.yaml
+          sed -i.bak "s|tag: \".*\"|tag: \"${{ env.IMAGE_TAG }}\"|g" "$VALUES_FILE"
           
           # Also ensure pullPolicy is Always
-          sed -i.bak "s|pullPolicy:.*|pullPolicy: Always|g" demo-apps/product-catalog-service/values.yaml
+          sed -i.bak "s|pullPolicy:.*|pullPolicy: Always|g" "$VALUES_FILE"
           
           # Show the change
           echo "Updated values.yaml:"
