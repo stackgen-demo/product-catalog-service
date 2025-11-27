@@ -107,10 +107,42 @@ jobs:
           BRANCH_NAME="update/product-catalog-service-${{ env.IMAGE_TAG }}"
           PR_TITLE="chore: update product-catalog-service image tag to ${{ env.IMAGE_TAG }}"
           
-          # Checkout main and create new branch
-          git checkout main
-          git pull origin main
-          git checkout -b "$BRANCH_NAME"
+          # Ensure we're on main and up to date
+          git checkout main || git checkout -b main
+          git fetch origin main
+          git reset --hard origin/main
+          
+          # Fetch all remote branches
+          git fetch origin
+          
+          # Check if branch exists on remote
+          if git ls-remote --heads origin "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+            echo "Branch $BRANCH_NAME exists on remote, will update it"
+            # Delete local branch if it exists
+            if git show-ref --verify --quiet refs/heads/"$BRANCH_NAME"; then
+              git branch -D "$BRANCH_NAME"
+            fi
+            # Checkout the remote branch
+            git checkout -b "$BRANCH_NAME" origin/"$BRANCH_NAME"
+            # Reset to main to start fresh (we'll make new changes)
+            git reset --hard origin/main
+          else
+            echo "Creating new branch $BRANCH_NAME"
+            # Delete local branch if it exists
+            if git show-ref --verify --quiet refs/heads/"$BRANCH_NAME"; then
+              git branch -D "$BRANCH_NAME"
+            fi
+            # Create new branch from main
+            git checkout -b "$BRANCH_NAME"
+          fi
+          
+          # Verify we're on the branch (not main)
+          CURRENT_BRANCH=$(git branch --show-current)
+          echo "Current branch: $CURRENT_BRANCH"
+          if [ "$CURRENT_BRANCH" = "main" ]; then
+            echo "ERROR: Still on main branch! Aborting."
+            exit 1
+          fi
           
           # Update the repository in values.yaml
           sed -i.bak "s|repository:.*|repository: ${ECR_REPO}|g" "$VALUES_FILE"
@@ -131,7 +163,16 @@ jobs:
           else
             git add "$VALUES_FILE"
             git commit -m "$PR_TITLE"
-            git push origin "$BRANCH_NAME"
+            
+            # Explicitly push to the branch (not main)
+            echo "Pushing to branch: $BRANCH_NAME"
+            # Use --force-with-lease to safely overwrite remote branch
+            # This is safe because we just reset to main, so we know our changes are correct
+            git push origin "$BRANCH_NAME" --force-with-lease || {
+              echo "Force-with-lease failed, trying regular push after fetch"
+              git fetch origin "$BRANCH_NAME" || true
+              git push origin "$BRANCH_NAME" --force-with-lease
+            }
             
             # Create PR using GitHub CLI
             gh pr create \
@@ -145,7 +186,7 @@ jobs:
               This PR was automatically created by the product-catalog-service build workflow." \
               --base main \
               --head "$BRANCH_NAME" \
-              --repo appcd-dev/otel-microservices-demo || echo "PR may already exist or GitHub CLI not available"
+              --repo appcd-dev/otel-microservices-demo || echo "PR may already exist"
             
             echo "Created PR for image tag update: ${{ env.IMAGE_TAG }}"
           fi
