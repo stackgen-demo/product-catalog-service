@@ -24,6 +24,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
+      contents: write
     
     steps:
       - name: Checkout code
@@ -83,4 +84,39 @@ jobs:
           echo "Image URIs:"
           echo "  Version: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
           echo "  Latest: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
+      
+      - name: Checkout Helm chart repository
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/checkout@v4
+        with:
+          repository: appcd-dev/otel-microservices-demo
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: helm-repo
+          
+      - name: Update image tag in values.yaml
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: helm-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Update the tag in values.yaml
+          sed -i.bak "s|tag: \".*\"|tag: \"${{ env.IMAGE_TAG }}\"|g" demo-apps/product-catalog-service/values.yaml
+          
+          # Also ensure pullPolicy is Always
+          sed -i.bak "s|pullPolicy:.*|pullPolicy: Always|g" demo-apps/product-catalog-service/values.yaml
+          
+          # Show the change
+          echo "Updated values.yaml:"
+          git diff demo-apps/product-catalog-service/values.yaml || true
+          
+          # Commit and push if there are changes
+          if git diff --quiet demo-apps/product-catalog-service/values.yaml; then
+            echo "No changes to commit"
+          else
+            git add demo-apps/product-catalog-service/values.yaml
+            git commit -m "chore: update product-catalog-service image tag to ${{ env.IMAGE_TAG }}"
+            git push
+            echo "✅ Updated Helm values.yaml with new tag: ${{ env.IMAGE_TAG }}"
+          fi
 
