@@ -334,6 +334,27 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 		return nil, status.Errorf(codes.Internal, msg)
 	}
 
+	// ERROR SIMULATION: Try to use numeric IDs as array indices
+	// This simulates a bug where developer assumes IDs are sequential numbers
+	// Will panic if ID is a number >= len(catalog)
+	if productIndex, err := strconv.Atoi(req.Id); err == nil {
+		if productIndex >= 0 && productIndex < len(catalog) {
+			// Direct index access - works for numeric IDs within bounds
+			found := catalog[productIndex]
+			if found != nil && found.Id == req.Id {
+				span.AddEvent("Product Found via Index")
+				return found, nil
+			}
+		} else {
+			// ERROR: Index out of bounds - will panic
+			// This happens when ID is a number >= catalog length
+			// Example: If catalog has 10 products (indices 0-9), requesting ID "15" will panic
+			found := catalog[productIndex] // PANIC: index out of range
+			return found, nil
+		}
+	}
+
+	// Fallback to normal search for non-numeric IDs
 	var found *pb.Product
 	for _, product := range catalog {
 		if req.Id == product.Id {
