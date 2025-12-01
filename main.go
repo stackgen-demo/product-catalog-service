@@ -370,6 +370,9 @@ func (p *productCatalog) SearchProducts(ctx context.Context, req *pb.SearchProdu
 
 	var result []*pb.Product
 	for _, product := range catalog {
+		// ERROR SIMULATION: No nil check for product.Name or product.Description
+		// This will panic if any product has nil Name or Description fields
+		// To trigger: Add a product with null name to products.json
 		if strings.Contains(strings.ToLower(product.Name), strings.ToLower(req.Query)) ||
 			strings.Contains(strings.ToLower(product.Description), strings.ToLower(req.Query)) {
 			result = append(result, product)
