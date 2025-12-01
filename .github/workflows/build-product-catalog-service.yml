@@ -15,7 +15,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: opentelemetry-demo/product-catalog-service
   AWS_ACCOUNT_ID: 339712749745
-  IMAGE_TAG: 2.1.3-product-catalog
+  IMAGE_TAG: 2.1.4-product-catalog
 
 jobs:
   build-and-push:
