@@ -15,7 +15,6 @@ env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: opentelemetry-demo/product-catalog-service
   AWS_ACCOUNT_ID: 339712749745
-  IMAGE_TAG: 2.1.4-product-catalog
 
 jobs:
   build-and-push:
@@ -50,6 +49,38 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Get latest ECR tag matching pattern
+        id: get-tag
+        run: |
+          # Get all tags matching *.*.*-product-catalog pattern
+          TAGS=$(aws ecr list-images \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'imageIds[?contains(imageTag, `-product-catalog`)].imageTag' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$TAGS" ] || [ "$TAGS" = "None" ]; then
+            # No existing tags found, start with 2.1.0
+            LATEST_TAG="2.1.0-product-catalog"
+            echo "No existing tags found, using: $LATEST_TAG"
+          else
+            # Sort tags by version and get the latest
+            LATEST_TAG=$(echo "$TAGS" | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-product-catalog$' | \
+              sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+            
+            if [ -z "$LATEST_TAG" ]; then
+              # No matching tags found, start with 2.1.0
+              LATEST_TAG="2.1.0-product-catalog"
+              echo "No matching tags found, using: $LATEST_TAG"
+            else
+              echo "Found latest tag: $LATEST_TAG"
+            fi
+          fi
+          
+          echo "IMAGE_TAG=$LATEST_TAG" >> $GITHUB_ENV
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "✅ Using tag: $LATEST_TAG"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -83,6 +114,8 @@ jobs:
           echo "Image URIs:"
           echo "  Version: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
           echo "  Latest: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
+          echo ""
+          echo "📌 Using tag: ${{ env.IMAGE_TAG }}"
       
       - name: Checkout Helm chart repository
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -104,8 +137,9 @@ jobs:
           
           VALUES_FILE="demo-apps/product-catalog-service/values.yaml"
           ECR_REPO="339712749745.dkr.ecr.us-east-1.amazonaws.com/opentelemetry-demo/product-catalog-service"
-          BRANCH_NAME="update/product-catalog-service-${{ env.IMAGE_TAG }}"
-          PR_TITLE="chore: update product-catalog-service image tag to ${{ env.IMAGE_TAG }}"
+          IMAGE_TAG="${{ env.IMAGE_TAG }}"
+          BRANCH_NAME="update/product-catalog-service-${IMAGE_TAG}"
+          PR_TITLE="chore: update product-catalog-service image tag to ${IMAGE_TAG}"
           
           # Ensure we're on main and up to date
           git checkout main || git checkout -b main
@@ -147,8 +181,8 @@ jobs:
           # Update the repository in values.yaml
           sed -i.bak "s|repository:.*|repository: ${ECR_REPO}|g" "$VALUES_FILE"
           
-          # Update the tag in values.yaml
-          sed -i.bak "s|tag: \".*\"|tag: \"${{ env.IMAGE_TAG }}\"|g" "$VALUES_FILE"
+          # Update the tag in values.yaml - match pattern *.*.*-product-catalog
+          sed -i.bak "s|tag: \".*-product-catalog\"|tag: \"${IMAGE_TAG}\"|g" "$VALUES_FILE"
           
           # Also ensure pullPolicy is Always
           sed -i.bak "s|pullPolicy:.*|pullPolicy: Always|g" "$VALUES_FILE"
@@ -177,17 +211,18 @@ jobs:
             # Create PR using GitHub CLI
             gh pr create \
               --title "$PR_TITLE" \
-              --body "Automated update: Update product-catalog-service image tag to ${{ env.IMAGE_TAG }}
+              --body "Automated update: Update product-catalog-service image tag to ${IMAGE_TAG}
               
               - Repository: ${ECR_REPO}
-              - Tag: ${{ env.IMAGE_TAG }}
+              - Tag: ${IMAGE_TAG}
               - Pull Policy: Always
               
-              This PR was automatically created by the product-catalog-service build workflow." \
+              This PR was automatically created by the product-catalog-service build workflow.
+              Tag was automatically detected from ECR." \
               --base main \
               --head "$BRANCH_NAME" \
               --repo appcd-dev/otel-microservices-demo || echo "PR may already exist"
             
-            echo "Created PR for image tag update: ${{ env.IMAGE_TAG }}"
+            echo "✅ Created PR for image tag update: ${IMAGE_TAG}"
           fi
 
