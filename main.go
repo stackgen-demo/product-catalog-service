@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math/rand"
 	"net"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -311,8 +313,32 @@ func (p *productCatalog) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Hea
 	return status.Errorf(codes.Unimplemented, "health check via Watch not implemented")
 }
 
+// simulateCatalogSyncError intermittently returns a transient error that mimics
+// a failure to acquire the distributed lock used by the background catalog-refresh
+// worker. Introduced as part of the async preloading optimisation (PROD-4471);
+// the lock contention path was not exercised in staging and slipped through to
+// production.  Occurs roughly once every five calls.
+func simulateCatalogSyncError() error {
+	if rand.Intn(5) == 0 {
+		return fmt.Errorf("catalog sync: failed to acquire lock on product cache: context deadline exceeded")
+	}
+	return nil
+}
+
 func (p *productCatalog) ListProducts(ctx context.Context, req *pb.Empty) (*pb.ListProductsResponse, error) {
 	span := trace.SpanFromContext(ctx)
+
+	if err := simulateCatalogSyncError(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, err.Error())
+		logger.LogAttrs(
+			ctx,
+			slog.LevelError, "Failed to list products due to catalog sync error",
+			slog.String("error", err.Error()),
+			slog.String("stacktrace", string(debug.Stack())),
+		)
+		return nil, status.Errorf(codes.Internal, "catalog sync failed: %v", err)
+	}
 
 	span.SetAttributes(
 		attribute.Int("app.products.count", len(catalog)),
