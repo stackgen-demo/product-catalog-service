@@ -22,8 +22,11 @@ import (
 	"syscall"
 	"time"
 
+	grpctrace "github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2"
+	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/opentelemetry/opentelemetry-demo/src/product-catalog/internal/demo"
+	jsonlogger "github.com/opentelemetry/opentelemetry-demo/src/product-catalog/internal/logger"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -135,6 +138,12 @@ func initLoggerProvider() *sdklog.LoggerProvider {
 }
 
 func main() {
+	ddtracer.Start(
+		ddtracer.WithService(envOrDefault("DD_SERVICE", "product-catalog-service")),
+		ddtracer.WithEnv(envOrDefault("DD_ENV", "demo")),
+	)
+	defer ddtracer.Stop()
+
 	lp := initLoggerProvider()
 	defer func() {
 		if err := lp.Shutdown(context.Background()); err != nil {
@@ -185,7 +194,7 @@ func main() {
 	}
 
 	srv := grpc.NewServer(
-		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.UnaryInterceptor(grpctrace.UnaryServerInterceptor()),
 	)
 
 	reflection.Register(srv)
@@ -331,11 +340,15 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 	defer func() {
 		if r := recover(); r != nil {
 			stack := string(debug.Stack())
-			logger.ErrorContext(ctx, "panic recovered in GetProduct",
-				slog.Any("error", r),
-				slog.String("stack_trace", stack),
-				slog.String("product_id", req.Id),
-			)
+			jsonlogger.ErrorContext(ctx, "panic recovered in GetProduct", map[string]any{
+				"error": map[string]any{
+					"kind":       "CatalogRankIndexPanic",
+					"message":    fmt.Sprint(r),
+					"root_cause": "Latent rank index bug in enrichProductWithRank or CATALOG_DEMO_FAULT=rank",
+					"stack":      stack,
+				},
+				"context": map[string]any{"product_id": req.Id},
+			})
 			span.SetStatus(otelcodes.Error, fmt.Sprintf("internal server error: %v", r))
 			span.RecordError(fmt.Errorf("panic in GetProduct: %v", r))
 			resp = nil
@@ -344,10 +357,19 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 	}()
 
 	// GetProduct will fail on a specific product when feature flag is enabled
-	if p.checkProductFailure(ctx, req.Id) {
+	flagFailure := p.checkProductFailure(ctx, req.Id)
+	if demo.ShouldInjectFeatureFailure(req.Id, flagFailure) {
 		msg := "Error: Product Catalog Fail Feature Flag Enabled"
 		span.SetStatus(otelcodes.Error, msg)
 		span.AddEvent(msg)
+		jsonlogger.ErrorContext(ctx, msg, map[string]any{
+			"error": map[string]any{
+				"kind":       "CatalogFeatureFailure",
+				"message":    msg,
+				"root_cause": "CATALOG_DEMO_FAULT=feature or productCatalogFailure flag enabled for OLJCESPC7Z",
+			},
+			"context": map[string]any{"product_id": req.Id},
+		})
 		return nil, status.Errorf(codes.Internal, msg)
 	}
 
@@ -363,6 +385,13 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 		msg := fmt.Sprintf("Product Not Found: %s", req.Id)
 		span.SetStatus(otelcodes.Error, msg)
 		span.AddEvent(msg)
+		jsonlogger.ErrorContext(ctx, msg, map[string]any{
+			"error": map[string]any{
+				"kind":    "CatalogProductNotFound",
+				"message": msg,
+			},
+			"context": map[string]any{"product_id": req.Id},
+		})
 		return nil, status.Errorf(codes.NotFound, msg)
 	}
 
@@ -389,6 +418,10 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 // Used by the downstream recommendation engine to surface premium vs. value-tier products.
 // Introduced as part of the personalization pipeline work (PROD-3287).
 func enrichProductWithRank(ctx context.Context, p *pb.Product) *pb.Product {
+	if demo.ShouldForceRankPanic() {
+		panic("catalog rank fault injection")
+	}
+
 	if len(catalog) <= 1 {
 		return p
 	}
@@ -439,6 +472,13 @@ func (p *productCatalog) checkProductFailure(ctx context.Context, id string) boo
 func createClient(ctx context.Context, svcAddr string) (*grpc.ClientConn, error) {
 	return grpc.DialContext(ctx, svcAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		grpc.WithUnaryInterceptor(grpctrace.UnaryClientInterceptor()),
 	)
+}
+
+func envOrDefault(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
