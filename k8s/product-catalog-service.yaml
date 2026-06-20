@@ -55,6 +55,10 @@ spec:
               value: ""
             - name: CATALOG_FAILURE_FRACTION
               value: "0.05"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://datadog-agent:4317
+            - name: OTEL_EXPORTER_OTLP_INSECURE
+              value: "true"
           readinessProbe:
             tcpSocket:
               port: grpc
