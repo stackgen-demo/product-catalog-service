@@ -1,0 +1,71 @@
+# product-catalog-service in aiden-demo (gRPC + OTLP → shared datadog-agent).
+# Prerequisite: order-service stack applied (namespace + datadog-agent + secret).
+# Enable OTLP on the agent once: kubectl -n aiden-demo set env deployment/datadog-agent DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT=0.0.0.0:4317
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-catalog-service
+  namespace: aiden-demo
+  labels:
+    app: product-catalog-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: product-catalog-service
+  template:
+    metadata:
+      labels:
+        app: product-catalog-service
+      annotations:
+        ad.datadoghq.com/product-catalog-service.logs: '[{"source":"go","service":"product-catalog-service","tags":["env:demo"]}]'
+    spec:
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: aiden-demo
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: product-catalog-service
+          image: ghcr.io/stackgen-demo/product-catalog-service:latest
+          imagePullPolicy: Always
+          ports:
+            - name: grpc
+              containerPort: 3550
+          env:
+            - name: PRODUCT_CATALOG_PORT
+              value: "3550"
+            - name: OTEL_SERVICE_NAME
+              value: product-catalog-service
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=demo
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://datadog-agent:4317
+            - name: OTEL_EXPORTER_OTLP_INSECURE
+              value: "true"
+          readinessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: grpc
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-catalog-service
+  namespace: aiden-demo
+spec:
+  selector:
+    app: product-catalog-service
+  ports:
+    - name: grpc
+      port: 3550
+      targetPort: grpc

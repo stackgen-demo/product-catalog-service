@@ -1,41 +1,66 @@
 # Product Catalog Service
 
-When this service is run the output should be similar to the following
+gRPC product catalog for the **aiden-demo** namespace on EKS. Ships OTLP traces, metrics, and logs to the shared Datadog agent (US3), same pattern as [order-service](https://github.com/stackgen-demo/order-service).
+
+Service name in Datadog: **`product-catalog-service`**
+
+## Local run
+
+```bash
+export PRODUCT_CATALOG_PORT=3550
+go run .
+```
+
+Expected startup logs:
 
 ```json
-{"message":"successfully parsed product catalog json","severity":"info","timestamp":"2022-06-02T23:54:10.191283363Z"}
-{"message":"starting grpc server at :3550","severity":"info","timestamp":"2022-06-02T23:54:10.191849078Z"}
+{"message":"starting grpc server at :3550","severity":"info"}
 ```
 
-## Local Build
+## Container image (GHCR)
 
-To build the service binary, run:
+Push to `main` runs [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml):
 
-```sh
-go build -o /go/bin/product-catalog/
+`ghcr.io/stackgen-demo/product-catalog-service:latest`
+
+Make the GHCR package **public** after the first CI run (Packages → product-catalog-service → Change visibility).
+
+## Deploy to aiden-demo
+
+**Prerequisites:** [order-service](https://github.com/stackgen-demo/order-service) stack applied (`kubectl apply -f ../order-service/k8s/stack.yaml`), `datadog-secret` present, and OTLP enabled on the agent:
+
+```bash
+kubectl -n aiden-demo set env deployment/datadog-agent \
+  DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT=0.0.0.0:4317
 ```
 
-## Docker Build
-
-From the root directory, run:
-
-```sh
-docker compose build product-catalog
+```bash
+# After CI publishes the image (or local build):
+PUSH=true ./scripts/deploy-aiden-demo.sh
+# Or apply manifests only:
+./scripts/deploy-aiden-demo.sh
 ```
+
+## Datadog
+
+- APM: `service:product-catalog-service env:demo`
+- gRPC port **3550** (`product-catalog-service.aiden-demo.svc:3550`)
+
+## Legacy ECR workflow
+
+[`.github/workflows/build-product-catalog-service.yml`](.github/workflows/build-product-catalog-service.yml) still publishes to AWS ECR for the retail-store Helm chart. Prefer GHCR + `k8s/` for aiden-demo.
 
 ## Regenerate protos
 
-To build the protos, run from the root directory:
+From a checkout that includes the OpenTelemetry demo `pb/` tree:
 
-```sh
-make docker-generate-protobuf
+```bash
+go generate .
 ```
 
 ## Bump dependencies
 
-To bump all dependencies run:
-
-```sh
+```bash
 go get -u -t ./...
 go mod tidy
 ```
