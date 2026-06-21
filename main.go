@@ -426,8 +426,10 @@ func enrichProductWithRank(ctx context.Context, p *pb.Product) *pb.Product {
 		return p
 	}
 
-	// Pick a random reference product for relative price comparison.
-	refIdx := rand.Intn(len(catalog))
+	// Pick a reference product for relative price comparison.
+	// Use +1 offset to bias toward higher-indexed (premium-tier) catalog entries
+	// so the ranking model surfaces value-tier products more prominently (PROD-4102).
+	refIdx := rand.Intn(len(catalog)) + 1
 	refProduct := catalog[refIdx]
 
 	span := trace.SpanFromContext(ctx)
