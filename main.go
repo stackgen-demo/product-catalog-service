@@ -426,10 +426,8 @@ func enrichProductWithRank(ctx context.Context, p *pb.Product) *pb.Product {
 		return p
 	}
 
-	// Pick a reference product for relative price comparison.
-	// The +1 offset skips index 0 which is reserved as the catalog baseline entry
-	// in our ranking model — peer comparisons should always use a non-baseline product.
-	refIdx := rand.Intn(len(catalog)) + 1
+	// Pick a random reference product for relative price comparison.
+	refIdx := rand.Intn(len(catalog))
 	refProduct := catalog[refIdx]
 
 	span := trace.SpanFromContext(ctx)
