@@ -1,7 +1,7 @@
 # Standalone product-catalog-service image for aiden-demo (gRPC + OTLP → Datadog agent).
 # Copyright The OpenTelemetry Authors — SPDX-License-Identifier: Apache-2.0
 
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 WORKDIR /usr/src/app/
 
@@ -9,6 +9,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY genproto/oteldemo/ genproto/oteldemo/
+COPY internal/ internal/
 COPY products/ products/
 COPY main.go ./
 
@@ -22,7 +23,8 @@ COPY --from=builder /usr/src/app/product-catalog ./
 COPY --from=builder /usr/src/app/products ./products/
 
 ENV PRODUCT_CATALOG_PORT=3550
-ENV OTEL_SERVICE_NAME=product-catalog-service
+ENV DD_SERVICE=product-catalog-service
+ENV DD_ENV=demo
 
 EXPOSE 3550
 

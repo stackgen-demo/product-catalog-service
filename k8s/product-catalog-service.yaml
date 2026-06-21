@@ -1,6 +1,5 @@
-# product-catalog-service in aiden-demo (gRPC + OTLP → shared datadog-agent).
-# Prerequisite: order-service stack applied (namespace + datadog-agent + secret).
-# Enable OTLP on the agent once: kubectl -n aiden-demo set env deployment/datadog-agent DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT=0.0.0.0:4317
+# product-catalog-service in aiden-demo (gRPC + Datadog APM/logs via shared datadog-agent).
+# Prerequisite: order-service k8s/stack.yaml (namespace + datadog-agent + secret + log paths).
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -38,10 +37,24 @@ spec:
           env:
             - name: PRODUCT_CATALOG_PORT
               value: "3550"
-            - name: OTEL_SERVICE_NAME
+            - name: DD_SERVICE
               value: product-catalog-service
-            - name: OTEL_RESOURCE_ATTRIBUTES
-              value: deployment.environment=demo
+            - name: DD_ENV
+              value: demo
+            - name: DD_AGENT_HOST
+              value: datadog-agent
+            - name: DD_TRACE_AGENT_PORT
+              value: "8126"
+            - name: DD_TRACE_ENABLED
+              value: "true"
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            - name: DD_TRACE_PROPAGATION_STYLE
+              value: "datadog,tracecontext"
+            - name: CATALOG_DEMO_FAULT
+              value: ""
+            - name: CATALOG_FAILURE_FRACTION
+              value: "0.05"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://datadog-agent:4317
             - name: OTEL_EXPORTER_OTLP_INSECURE
